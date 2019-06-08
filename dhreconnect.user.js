@@ -42,10 +42,18 @@ const r = (function(dh, toast, WS){
         }
     };
 
+    // close properly without reconnecting
+    // HACK: Just pretend this is our first connection to do that
+    const give_up = function(){
+        log('giving up');
+        reconnecting = false;
+        dh.webSocket.close();
+    };
+
     // save the preset used to log in if any
     let login_preset = null;
     // Only let the user know about the connections afer the first
-    let reconnection = false;
+    let did_login = false;
 
     // override login functions to track method
     // clear the login preset if a PW is used
@@ -64,6 +72,27 @@ const r = (function(dh, toast, WS){
         _loginPresets.apply(this, arguments);
     };
 
+    // Override the login return message to apply only if we aren't connected
+    // If we are connected, send our preferred message type
+    const _manageLoginReturnMessage = dh.manageLoginReturnMessage;
+    dh.manageLoginReturnMessage = function(return_message){
+        if(did_login){
+            message(return_message);
+            // we can't recover form an invalid PW or preset
+            give_up();
+        }else{
+            _manageLoginReturnMessage.apply(this, arguments);
+        }
+    };
+
+
+    // Override startGame to detect success on login
+    const _startGame = dh.startGame;
+    dh.startGame = function(){
+        did_login = true;
+        _startGame.apply(this, arguments);
+    };
+
     // override the websocket setup function to use ours
     dh.initWebsocket = function(){
         if (dh.webSocket){ return; }
@@ -78,10 +107,10 @@ const r = (function(dh, toast, WS){
             // if this isn't set, cBytes won't send data
             dh.websocketReady = true;
 
-            if (reconnection){
+            if (did_login){
                 message('Reconnected!');
             } else {
-                reconnection = true;
+                log('First connection');
             }
         });
 
@@ -92,7 +121,6 @@ const r = (function(dh, toast, WS){
         // override Error to queue the LOGIN comand as soon as possible
         // so we can use as many queued events as can can
         dh.webSocket.addEventListener('close', function(event){
-            log('Websocket disconnected...');
             message('Connection lost, reconnecting...');
 
             if(login_preset){
@@ -101,13 +129,13 @@ const r = (function(dh, toast, WS){
             }else if(
                 document.getElementById('password').value
             ){
-                let un = localStorage.username;
-                log(`Using existing user ${un}`);
+                const un = localStorage.username;
                 // pw box is never cleared
-                let pw = document.getElementById('password').value;
+                const pw = document.getElementById('password').value;
+                log(`Using existing user ${un}`);
                 dh.cBytes(`LOGIN=${un}~${pw}`);
             }else{
-                log('No login method found?');
+                message('No login method found');
             }
 
         });
