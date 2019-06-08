@@ -46,7 +46,7 @@ const r = (function(dh, toast, WS){
     // HACK: Just pretend this is our first connection to do that
     const give_up = function(){
         log('giving up');
-        reconnecting = false;
+        did_login = false;
         dh.webSocket.close();
     };
 
