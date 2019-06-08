@@ -12,6 +12,8 @@
 // @require         https://cdn.jsdelivr.net/gh/AlexKvazos/VanillaToasts@1.3.0/vanillatoasts.js
 // ==/UserScript==
 
+// TODO: Give alert options, check if chat is even enabled
+
 /*jshint esversion: 6 */
 const r = (function(dh, toast, WS){
     'use strict';
@@ -24,7 +26,7 @@ const r = (function(dh, toast, WS){
     };
     log('Loaded, debug mode ON');
 
-    // TODO: Give options, check if chat is even enabled
+    // TODO: Toast
     let do_toast = false;
     const message = function(text){
         log(`Sending message ${text}`);
@@ -43,7 +45,8 @@ const r = (function(dh, toast, WS){
     };
 
     // close properly without reconnecting
-    // HACK: Just pretend this is our first connection to do that
+    // HACK: Just pretend this is our first connection 
+    // so that we don't try to reconnect
     const give_up = function(){
         log('giving up');
         did_login = false;
@@ -64,7 +67,7 @@ const r = (function(dh, toast, WS){
         _login.apply(this, arguments);
     };
 
-    // set the preset used to log in
+    // Store the preset used to log in
     const _loginPresets = dh.loginPresets;
     dh.loginPresets = function(presetData){
         login_preset = presetData;
@@ -93,7 +96,7 @@ const r = (function(dh, toast, WS){
         _startGame.apply(this, arguments);
     };
 
-    // override the websocket setup function to use ours
+    // Override the websocket setup function to use ours
     dh.initWebsocket = function(){
         if (dh.webSocket){ return; }
         log('Setting up websocket');
@@ -143,6 +146,7 @@ const r = (function(dh, toast, WS){
 
 });
 
+// Add the CSS required for toasters to head
 (function(){
     // https://stackoverflow.com/a/11833777
     const head = document.head;
@@ -155,7 +159,7 @@ const r = (function(dh, toast, WS){
 
 // Smitty's Date.toString override breaks some promise code that userscripts use to inject the script. So we have to set 
 // @run-at          document-start
-// and use this hack to run after the rest of the js
+// and use to run after the rest of the js/page is loaded
 document.addEventListener("DOMContentLoaded", function(event) { 
     r(window, VanillaToasts, ReconnectingWebSocket);
 });
