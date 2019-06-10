@@ -4,7 +4,7 @@
 // @namespace       https://github.com/unnecessary-axiom/
 // @description     Auto-reconnect Diamondhunt 2
 // @license         MIT License
-// @version	        0.1
+// @version         0.1
 // @match           https://*.diamondhunt.co/*
 // @run-at          document-start
 //
