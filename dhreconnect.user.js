@@ -14,9 +14,38 @@
 
 // TODO: Give alert options, check if chat is even enabled
 
+
+/*
+ * Design
+ * 
+ * On login press game inits websocket, sends creds, receives result
+ * On success game inits and plays.
+ *
+ * Before login press I replace websocket init code with a ReconnectingWebSocket
+ * On login press I watch to keep track of which creds are used
+ * Init game as normal on connection.
+ * On disconnect, ReconnectingWS notifies me and I queue up re-auth for when it reconnects
+ * Re-use whatever auth happened on first connection
+ * Connection info happens in chat as a fake server messages unless chat isn't shown,
+ * in which case I use toasters.
+ *
+ * Some wranging has to happen to show login return/connection messages in the right spot
+ * As well as keeping track of when the initial connection and subsequent reconnections are done.
+ *
+ */
+
 /*jshint esversion: 6 */
 const r = (function(dh, toast, WS){
     'use strict';
+
+    // did we login in for the first time
+    let did_first_login = false;
+    // have we queued the authentication request when re-connecting?
+    let auth_queued = false;
+
+    // the auth string sent when logging in with a preset
+    let login_preset = null;
+    // the password part of the un/pw pair is taken from the login pw box if present
 
     const debug = !! localStorage.dhreconnect_debug;
     const log = function(message){
@@ -26,39 +55,31 @@ const r = (function(dh, toast, WS){
     };
     log('Loaded, debug mode ON');
 
-    // TODO: Toast
-    let do_toast = false;
+    // TODO: Toast settings
     const message = function(text){
         log(`Sending message ${text}`);
-        if(do_toast){
-                toast.create({
-                    title: 'Connection info',
-                    message: text,
-                    timeout: 5000,
-                });
-        }else{
+        if(did_first_login && element_visible('div-chat')){
             // username, icon, tag, message, isServerMessage
             // but dhFixed uses it as isPM so we just to set it as 0
             // and use tag 5 for the 'SERVER MESSAGE' tag
             dh.addToChatBox('', 0, 5, `[DH Reconnect] ${text}`, 0);
+        }else{
+            toast.create({
+                title: 'Connection info',
+                message: text,
+                timeout: 5000,
+            });
         }
     };
 
-    // close properly without reconnecting
-    // HACK: Just pretend this is our first connection 
-    // so that we don't try to reconnect
-    const give_up = function(){
-        log('giving up');
-        did_login = false;
-        dh.webSocket.close();
+    // is element by id visible?
+    const element_visible = function(e){
+        return window.getComputedStyle(
+            document.getElementById(e)
+        ).display != 'none';
     };
 
-    // save the preset used to log in if any
-    let login_preset = null;
-    // Only let the user know about the connections afer the first
-    let did_login = false;
-
-    // override login functions to track method
+    // override login functions to track method used
     // clear the login preset if a PW is used
     const _login = dh.login;
     dh.login = function(username, password, isNewAccount){
@@ -75,28 +96,37 @@ const r = (function(dh, toast, WS){
         _loginPresets.apply(this, arguments);
     };
 
-    // Override the login return message to apply only if we aren't connected
-    // If we are connected, send our preferred message type
+    // Override the login result message to apply only if we aren't connected
+    // If we are connected, use our own message system
     const _manageLoginReturnMessage = dh.manageLoginReturnMessage;
     dh.manageLoginReturnMessage = function(return_message){
-        if(did_login){
+        if(did_first_login){
+            // Mute the Loading message on reconnect so we aren't spammy. There is nothing to load.
+            if(return_message === 'Loading...'){
+                return;
+            }
             message(return_message);
-            // we can't recover form an invalid PW or preset
-            give_up();
         }else{
             _manageLoginReturnMessage.apply(this, arguments);
         }
     };
 
-
     // Override startGame to detect success on login
     const _startGame = dh.startGame;
     dh.startGame = function(){
-        did_login = true;
-        _startGame.apply(this, arguments);
+        if(!did_first_login){
+            did_first_login = true;
+            // only run DH init on real first login
+            _startGame.apply(this, arguments);
+        } else {
+            // after reconnected reconnected and loading message
+            // message('Ready');
+        }
+        // we authenticated, free to auth next connection loss
+        auth_queued = false;
     };
 
-    // Override the websocket setup function to use ours
+    // Override the websocket setup function and install the custom websocket
     dh.initWebsocket = function(){
         if (dh.webSocket){ return; }
         log('Setting up websocket');
@@ -110,10 +140,9 @@ const r = (function(dh, toast, WS){
             // if this isn't set, cBytes won't send data
             dh.websocketReady = true;
 
-            if (did_login){
+            // this is set after the first connection, during authentication
+            if(did_first_login){
                 message('Reconnected!');
-            } else {
-                log('First connection');
             }
         });
 
@@ -121,13 +150,19 @@ const r = (function(dh, toast, WS){
             dh.doCommand(event.data);
         });
 
-        // override Error to queue the LOGIN comand as soon as possible
-        // so we can use as many queued events as can can
+        // override the disconnect event to queue the auth command as soon as possible
+        // so we can apply as many queued events as possible
         dh.webSocket.addEventListener('close', function(event){
+            if(auth_queued){
+                log('connection closed again, but already sent auth');
+                // we have an auth message already queued, don't send another
+                return;
+            }
+            auth_queued = true;
             message('Connection lost, reconnecting...');
 
             if(login_preset){
-                log('Found preset');
+                log('Logging in with preset');
                 dh.cBytes('LOAD_PRESET=' + login_preset);
             }else if(
                 document.getElementById('password').value
@@ -135,12 +170,11 @@ const r = (function(dh, toast, WS){
                 const un = localStorage.username;
                 // pw box is never cleared
                 const pw = document.getElementById('password').value;
-                log(`Using existing user ${un}`);
+                log(`Using found creds for ${un}`);
                 dh.cBytes(`LOGIN=${un}~${pw}`);
             }else{
                 message('No login method found');
             }
-
         });
     };
 
