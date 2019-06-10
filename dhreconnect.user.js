@@ -65,9 +65,9 @@ const r = (function(dh, toast, WS){
             dh.addToChatBox('', 0, 5, `[DH Reconnect] ${text}`, 0);
         }else{
             toast.create({
-                title: 'Connection info',
-                message: text,
-                timeout: 5000,
+                title: 'DH Reconnect',
+                text: text,
+                timeout: 10000,
             });
         }
     };
